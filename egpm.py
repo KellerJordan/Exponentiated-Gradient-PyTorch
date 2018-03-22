@@ -1,4 +1,5 @@
-mplementation of EG plus/minus optimizer in PyTorch
+"""
+Implementation of EG plus/minus optimizer in PyTorch
 
 Author: Keller Jordan
 """
