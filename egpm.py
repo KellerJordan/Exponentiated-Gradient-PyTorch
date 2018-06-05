@@ -26,6 +26,8 @@ class EGPM(Optimizer):
         renormalization.
         :param gradient_clipping: None | float - set to None to not use gradient clipping,
         otherwise gradients are clipped to range [-gradient_clipping, +gradient_clipping]
+        :param weight_regularization: None | ('entropy', alpha) | ('l1', alpha) - tuple determining
+        the type and scale of weight regularization to apply on each update
         :param plus_minus: True | False - whether to use w = w_pos + w_neg weight pairs. If set to
         False, this optimizer will behave as vanilla EG with only w_pos weights
         :param init: 'bootstrap' | 'uniform' | 'log_normal' | 'gamma' - bootstrap initialization sets
@@ -106,7 +108,8 @@ class EGPM(Optimizer):
         for i in weights.keys():
             curr_layer = {}
             curr_layer['weight'] = weights[i]
-            curr_layer['bias'] = biases[i] if i in biases else None
+            if i in biases:
+                curr_layer['bias'] = biases[i]
             param_layers.append(curr_layer)
 
         return param_layers
@@ -114,7 +117,7 @@ class EGPM(Optimizer):
     def init_layer(self, layer, u, init, plus_minus, verbose=False):
         """initialize positive and negative weights for a layer"""
 
-        n_neurons = layer['bias'].numel()
+        n_neurons = layer['weight'].size(0)
         n_inputs = (layer['weight'].numel() / n_neurons) + 1
         u_weight = u / n_inputs
         
@@ -172,7 +175,7 @@ class EGPM(Optimizer):
     
     def update_param(self, p, lr, p_type, weight_reg):
         """update a parameter according to exponentiated gradient update rule,
-        does not renormalize"""
+        does not renormalize. regularization is applied according to weight_reg argument"""
         
         if p.grad is None:
             return
@@ -182,17 +185,28 @@ class EGPM(Optimizer):
         w_pos = param_state['w_pos']
         w_neg = param_state['w_neg']
         
-        reg_scale = 1
-        if weight_reg is not None:
+        # only regularize weights
+        if weight_reg is not None and p_type == 'weight':            
             reg_type, alpha = weight_reg
             if reg_type == 'entropy':
-                if p_type == 'weight':
-                    reg_scale = 1 / (1 + alpha)
+                reg_scale = 1 / (1 + alpha)
+                r_pos = torch.exp(-lr * d_p * reg_scale)
+                r_neg = 1 / r_pos
+                update_pos = r_pos * w_pos.pow(reg_scale)
+                update_neg = r_neg * w_neg.pow(reg_scale)
+            elif reg_type == 'l1':
+                reg_scale = np.exp(-alpha)
+                r_pos = torch.exp(-lr * d_p)
+                r_neg = 1 / r_pos
+                update_pos = r_pos * w_pos * reg_scale
+                update_neg = r_neg * w_neg * reg_scale
         
-        r_pos = torch.exp(-lr * d_p * reg_scale)
-        r_neg = 1 / r_pos # torch.exp(-lr * -d_p)
-        update_pos = r_pos * w_pos.pow(reg_scale)
-        update_neg = r_neg * w_neg.pow(reg_scale)
+        # unregularized update
+        else:
+            r_pos = torch.exp(-lr * d_p)
+            r_neg = 1 / r_pos # torch.exp(-lr * -d_p)
+            update_pos = r_pos * w_pos
+            update_neg = r_neg * w_neg
 
         self.state[p]['w_pos'] = update_pos
         self.state[p]['w_neg'] = update_neg
