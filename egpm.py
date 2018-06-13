@@ -12,15 +12,15 @@ class EGPM(Optimizer):
 
     def __init__(self, params, lr=required,
                  u_scaling=100, norm_per='neuron',
-                 gradient_clipping=None,
                  weight_regularization=None,
+                 gradient_clipping=None,
                  plus_minus=True,
                  init='log_normal'):
         """Initialize a stochastic exponentiated gradient plus/minus optimizer
         
         :param u_scaling: Constant `U` for use in rescaling the sum of positive and negative weights
         after each update
-        :param norm_per: 'variable' | 'neuron' | 'weight' | 'none' - determines what set of weights
+        :param norm_per: 'neuron' | None - determines what set of weights
         to sum over, variable corresponds to an entire layer, neuron sums over the weights going
         into each neuron, weight is only the w_pos and w_neg for each weight, and none does no
         renormalization.
@@ -36,7 +36,7 @@ class EGPM(Optimizer):
         neuron is U, and stdev such that the variance of data is preserved as it passes through layer
         """
         
-        if norm_per == 'none':
+        if norm_per is None:
             u_scaling = 1
         defaults = dict(lr=lr, u_scaling=u_scaling, norm_per=norm_per,
                         gradient_clipping=gradient_clipping,
@@ -44,7 +44,7 @@ class EGPM(Optimizer):
                         plus_minus=plus_minus,
                         init_type=init)
         super().__init__(params, defaults)
-        if norm_per not in ['variable', 'neuron', 'weight', 'none']:
+        if norm_per not in ['neuron', None]:
             raise Exception('Unknown normalization scheme: per_%s' % norm_per)
         if init not in ['bootstrap', 'uniform', 'log_normal', 'gamma']:
             raise Exception('Unknown initialization scheme: %s' % init)
@@ -226,24 +226,24 @@ class EGPM(Optimizer):
 
         for p, w_pos, w_neg in zip(layer.values(), weights_pos, weights_neg):
 
-            if norm_per == 'weight':
-                n_outputs = Z.size(0)
-                n_weights = p.numel()
-                n_inputs = int(n_weights / n_outputs)
-                Z_p = Z[:, :n_inputs].clone()
-                if n_inputs < Z.size(1):
-                    Z = Z[:, n_inputs:]
-                Z_p = Z_p.view(*p.size())
+#             if norm_per == 'weight':
+#                 n_outputs = Z.size(0)
+#                 n_weights = p.numel()
+#                 n_inputs = int(n_weights / n_outputs)
+#                 Z_p = Z[:, :n_inputs].clone()
+#                 if n_inputs < Z.size(1):
+#                     Z = Z[:, n_inputs:]
+#                 Z_p = Z_p.view(*p.size())
 
-            elif norm_per == 'neuron':
+            if norm_per == 'neuron':
                 Z_p = Z.clone()
                 while len(Z_p.size()) < len(p.size()):
                     Z_p = Z_p[..., None]
 
-            elif norm_per == 'variable':
-                Z_p = Z.clone()
+#             elif norm_per == 'variable':
+#                 Z_p = Z.clone()
             
-            elif norm_per == 'none':
+            elif norm_per is None:
                 Z_p = Z.clone()
 
             w_pos = self.state[p]['w_pos'] = u * w_pos / (Z_p + eps)
@@ -257,19 +257,19 @@ class EGPM(Optimizer):
         n_neurons = weight_sum.size(0)
         n_inputs = int(weight_sum.numel() / n_neurons)
         
-        # per_variable: all weights in var get n_neurons * U
-        if norm_per == 'variable':
-            return torch.Tensor([weight_sum.sum() / n_neurons])
+#         # per_variable: all weights in var get n_neurons * U
+#         if norm_per == 'variable':
+#             return torch.Tensor([weight_sum.sum() / n_neurons])
 
         # per_neuron: weight inputs to each neuron get U
-        elif norm_per == 'neuron':
+        if norm_per == 'neuron':
             update_sum = weight_sum.view(n_neurons, n_inputs)
             return update_sum.sum(1)
 
-        # per_weight: each weight gets U / n_inputs
-        elif norm_per == 'weight':
-            return weight_sum * n_inputs
+#         # per_weight: each weight gets U / n_inputs
+#         elif norm_per == 'weight':
+#             return weight_sum * n_inputs
 
         # none: no normalization whatsoever, set u = 1
-        elif norm_per == 'none':
+        elif norm_per is None:
             return torch.Tensor([1.0])
