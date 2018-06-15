@@ -195,7 +195,7 @@ class EGPM(Optimizer):
                 update_pos = r_pos * w_pos.pow(reg_scale)
                 update_neg = r_neg * w_neg.pow(reg_scale)
             elif reg_type == 'l1':
-                reg_scale = np.exp(-alpha)
+                reg_scale = np.exp(-lr * alpha)
                 r_pos = torch.exp(-lr * d_p)
                 r_neg = 1 / r_pos
                 update_pos = r_pos * w_pos * reg_scale
